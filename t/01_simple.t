@@ -12,6 +12,7 @@ $r->connect('/', {controller => 'Root', 'action' => 'show_sub'}, {method => 'GET
 $r->connect(qr{^/belongs/([a-z]+)/([a-z]+)$}, {controller => 'May', action => 'show'});
 $r->connect('test7', qr{^/test7/([a-z]+)/([a-z]+)$});
 $r->connect(qr{\A/test8/([a-z]+)/([a-z]+)\z}, {controller => 'May', action => 'show'}, {capture => ['animal', 'color']});
+$r->connect('/test9/{0}/{00}', {controller => 'Test', action => 'zero'}, {method => 'GET'});
 
 is_deeply(
     $r->match( +{ REQUEST_METHOD => 'GET', PATH_INFO => '/', HTTP_HOST => 'localhost'} ),
@@ -80,6 +81,16 @@ is_deeply(
         color      => 'brown',
     },
     'named capture from regexp pattern',
+);
+is_deeply(
+    $r->match( +{ PATH_INFO => '/test9/fox/brown', HTTP_HOST => 'localhost', REQUEST_METHOD => 'GET' } ) || undef,
+    {
+        controller => 'Test',
+        action     => 'zero',
+        '0'        => 'fox',
+        '00'       => 'brown',
+    },
+    'capture to zero.',
 );
 
 done_testing;

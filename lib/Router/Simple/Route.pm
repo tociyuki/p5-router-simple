@@ -55,8 +55,8 @@ sub new {
                 q{(.+)};
             }
             else {
-                push @capture, $3 || $4;
-                '(' . ($5 || '[^/]+') . ')';
+                push @capture, defined $3 ? $3 : $4;
+                '(' . (defined $5 ? $5 : '[^/]+') . ')';
             }
         }gemsx;
         $row->{pattern_re} = qr{\A$pattern\z}msx;
