@@ -10,7 +10,7 @@ sub new {
     my $class = shift;
 
     # connect([$name, ]$pattern[, \%dest[, \%opt]])
-    if (@_ == 1 || ref $_[1] eq 'HASH') {
+    if (@_ == 1 || ref $_[1] && ref $_[1] ne 'Regexp') {
         unshift(@_, undef);
     }
 
@@ -56,7 +56,7 @@ sub new {
             }
             else {
                 push @capture, defined $3 ? $3 : $4;
-                '(' . (defined $5 ? $5 : '[^/]+') . ')';
+                '(' . (defined $5 ? $5 : q{[^/]+}) . ')';
             }
         }gemsx;
         $row->{pattern_re} = qr{\A$pattern\z}msx;
