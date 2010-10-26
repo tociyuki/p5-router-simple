@@ -10,6 +10,8 @@ $r->connect('/blog/{year:\d{1,4}}/{month:\d{2}}/{day:\d\d}', {controller => 'Blo
 $r->connect('/comment', {controller => 'Comment', 'action' => 'create'}, {method => 'POST'});
 $r->connect('/', {controller => 'Root', 'action' => 'show_sub'}, {method => 'GET', host => 'sub.localhost'});
 $r->connect(qr{^/belongs/([a-z]+)/([a-z]+)$}, {controller => 'May', action => 'show'});
+$r->connect('test7', qr{^/test7/([a-z]+)/([a-z]+)$});
+$r->connect(qr{\A/test8/([a-z]+)/([a-z]+)\z}, {controller => 'May', action => 'show'}, {capture => ['animal', 'color']});
 
 is_deeply(
     $r->match( +{ REQUEST_METHOD => 'GET', PATH_INFO => '/', HTTP_HOST => 'localhost'} ),
@@ -62,6 +64,22 @@ is_deeply(
         action     => 'show',
         splat      => ['to', 'us'],
     }
+);
+is_deeply(
+    $r->match( +{ PATH_INFO => '/test7/fox/jumps', HTTP_HOST => 'localhost', REQUEST_METHOD => 'GET' } ) || undef,
+    {
+        splat      => ['fox', 'jumps'],
+    }
+);
+is_deeply(
+    $r->match( +{ PATH_INFO => '/test8/fox/brown', HTTP_HOST => 'localhost', REQUEST_METHOD => 'GET' } ) || undef,
+    {
+        controller => 'May',
+        action     => 'show',
+        animal     => 'fox',
+        color      => 'brown',
+    },
+    'named capture from regexp pattern',
 );
 
 done_testing;

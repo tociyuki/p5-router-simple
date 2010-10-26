@@ -1,4 +1,5 @@
 package Router::Simple::Route;
+use 5.008000;
 use strict;
 use warnings;
 use parent 'Class::Accessor::Fast';
@@ -9,105 +10,96 @@ sub new {
     my $class = shift;
 
     # connect([$name, ]$pattern[, \%dest[, \%opt]])
-    if (@_ == 1 || ref $_[1]) {
+    if (@_ == 1 || ref $_[1] eq 'HASH') {
         unshift(@_, undef);
     }
 
     my ($name, $pattern, $dest, $opt) = @_;
     Carp::croak("missing pattern") unless $pattern;
+    $opt ||= {};
     my $row = +{
         name     => $name,
         dest     => $dest,
         on_match => $opt->{on_match},
     };
     if (my $method = $opt->{method}) {
-        $method = [$method] unless ref $method;
-        $row->{method} = $method;
-
-        my $method_re = join '|', @{$method};
-        $row->{method_re} = qr{^(?:$method_re)$};
+        $row->{method} = [ ref $method ? @{$method} : $method ];
+        $row->{method_rh} = +{ map { uc $_ => 1 } @{$row->{method}} };
     }
     if (my $host = $opt->{host}) {
         $row->{host} = $host;
-        $row->{host_re} = ref $host ? $host : qr(^\Q$host\E$);
+        $row->{host_re} = ref $host ? $host : qr{\A$host\z}imsx;
     }
-
     $row->{pattern} = $pattern;
-
-    # compile pattern
-    my @capture;
-    $row->{pattern_re} = do {
-        if (ref $pattern) {
-            $row->{_regexp_capture} = 1;
-            $pattern;
-        } else {
-            $pattern =~ s!
-                \{((?:\{[0-9,]+\}|[^{}]+)+)\} | # /blog/{year:\d{4}}
-                :([A-Za-z0-9_]+)              | # /blog/:year
-                (\*)                          | # /blog/*/*
-                ([^{:*]+)                       # normal string
-            !
-                if ($1) {
-                    my ($name, $pattern) = split /:/, $1, 2;
-                    push @capture, $name;
-                    $pattern ? "($pattern)" : "([^/]+)";
-                } elsif ($2) {
-                    push @capture, $2;
-                    "([^/]+)";
-                } elsif ($3) {
-                    push @capture, '__splat__';
-                    "(.+)";
-                } else {
-                    quotemeta($4);
-                }
-            !gex;
-            qr{^$pattern$};
-        }
-    };
-    $row->{capture} = \@capture;
+    if (ref $pattern eq 'Regexp') {
+        $row->{pattern_re} = $pattern;
+        $row->{capture} = [ ref $opt->{capture} ? @{$opt->{capture}} : () ];
+    }
+    elsif (! ref $pattern && defined $pattern && $pattern ne q{}) {
+        # compile pattern
+        my @capture;
+        $pattern =~ s{
+            (?: ([^\{:*]+)              # normal string
+            |   (\*)                    # /entry/*/*
+            |   \: ([a-zA-Z0-9_]+)      # /entry/:id
+            |   \{ ([a-zA-Z0-9_]+)      # /entry/{id}, /entry/{id:[0-9]{4,}}
+                (?: \: ( [^\{\}]+ (?:\{[0-9,]+\} [^\{\}]*)* ) )?
+                \}
+            )
+        }{
+            if ($1) {
+                quotemeta $1;
+            }
+            elsif ($2) {
+                push @capture, '__splat__';
+                q{(.+)};
+            }
+            else {
+                push @capture, $3 || $4;
+                '(' . ($5 || '[^/]+') . ')';
+            }
+        }gemsx;
+        $row->{pattern_re} = qr{\A$pattern\z}msx;
+        $row->{capture} = \@capture;
+    }
+    else {
+        Carp::croak 'invalid pattern';
+    }
 
     return bless $row, $class;
 }
 
 sub match {
     my ($self, $env) = @_;
+    my $host = $env->{HTTP_HOST} || q{};
+    my $method = $env->{REQUEST_METHOD} || q{};
+    my $path = $env->{PATH_INFO} || q{};
 
-    if ($self->{host_re}) {
-        unless ($env->{HTTP_HOST} =~ $self->{host_re}) {
-            return undef;
-        }
-    }
-    if ($self->{method_re}) {
-        unless (($env->{REQUEST_METHOD} || '') =~ $self->{method_re}) {
-            return undef;
-        }
-    }
-    if (my @captured = ($env->{PATH_INFO} =~ $self->{pattern_re})) {
-        my %args;
-        my @splat;
-        if ($self->{_regexp_capture}) {
-            push @splat, @captured;
-        } else {
-            for my $i (0..@{$self->{capture}}-1) {
-                if ($self->{capture}->[$i] eq '__splat__') {
-                    push @splat, $captured[$i];
-                } else {
-                    $args{$self->{capture}->[$i]} = $captured[$i];
-                }
+    return if $self->{host_re} && $host !~ $self->{host_re};
+    return if $self->{method_rh} && ! exists $self->{method_rh}{uc $method};
+
+    if ($path =~ $self->{pattern_re}) {
+        ## no critic qw(ProhibitPunctuationVars)
+        my @match = map { substr $path, $-[$_], $+[$_] - $-[$_] } 1 .. $#-;
+        my $dest = +{ %{$self->{dest} || {}} };
+        for my $k (@{$self->{capture}}) {
+            if ($k eq '__splat__') {
+                push @{$dest->{splat}}, shift @match;
+            }
+            else {
+                $dest->{$k} = shift @match;
             }
         }
-        my $match = +{
-            %{$self->{dest}},
-            %args,
-            ( @splat ? ( splat => \@splat ) : () ),
-        };
+        if (@match) {
+            push @{$dest->{splat}}, @match;
+        }
         if ($self->{on_match}) {
-            my $ret = $self->{on_match}->($env, $match);
+            my $ret = $self->{on_match}->($env, $dest);
             return undef unless $ret;
         }
-        return $match;
+        return $dest;
     }
-    return undef;
+    return;
 }
 
 1;
