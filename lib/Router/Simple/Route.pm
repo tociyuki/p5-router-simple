@@ -83,7 +83,7 @@ sub match {
         my @match = map { substr $path, $-[$_], $+[$_] - $-[$_] } 1 .. $#-;
         my $dest = +{ %{$self->{dest} || {}} };
         for my $k (@{$self->{capture}}) {
-            if ($k eq '__splat__') {
+            if ($k eq '__splat__' || $k eq 'splat') {
                 push @{$dest->{splat}}, shift @match;
             }
             else {
