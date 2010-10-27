@@ -78,9 +78,11 @@ sub match {
     return if $self->{host_re} && $host !~ $self->{host_re};
     return if $self->{method_rh} && ! exists $self->{method_rh}{uc $method};
 
-    if ($path =~ $self->{pattern_re}) {
+    if (my @match = $path =~ $self->{pattern_re}) {
         ## no critic qw(ProhibitPunctuationVars)
-        my @match = map { substr $path, $-[$_], $+[$_] - $-[$_] } 1 .. $#-;
+        if ($#- < 1) {
+            @match = (); # the case of matching without captures.
+        }
         my $dest = +{ %{$self->{dest} || {}} };
         for my $k (@{$self->{capture}}) {
             if ($k eq '__splat__' || $k eq 'splat') {
